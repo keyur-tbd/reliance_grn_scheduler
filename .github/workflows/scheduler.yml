@@ -13,26 +13,26 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
-
+      uses: actions/checkout@v4
+      
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-
+        
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         # Install LlamaParse
         pip install llama-cloud-services
-
+        
     - name: Create credentials.json from secret
       run: echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
-
+      
     - name: Create token.json from secret
       run: echo '${{ secrets.GOOGLE_TOKEN }}' > token.json
-
+      
     - name: Run Reliance Automation
       env:
         LLAMA_CLOUD_API_KEY: ${{ secrets.LLAMA_API_KEY }}
@@ -43,9 +43,9 @@ jobs:
         # PDF_DRIVE_FOLDER_ID: "1CKPlXQcQsvGDWmpINVj8lpKI7G9VG1Yv"
         # SPREADSHEET_ID: "1zlJaRur0K50ZLFQhxxmvfFVA3l4Whpe9XWgi1E-HFhg"
       run: python app.py
-
-    - name: Upload processed state as artifact (optional)
-      uses: actions/upload-artifact@v3
+      
+    - name: Upload processed state as artifact
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: processed-state
