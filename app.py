@@ -51,7 +51,7 @@ CONFIG = {
     'gmail': {
         'sender': os.environ.get('GMAIL_SENDER', "DONOTREPLY@ril.com"),
         'search_term': os.environ.get('GMAIL_SEARCH_TERM', "grn"),
-        'days_back': int(os.environ.get('GMAIL_DAYS_BACK', 7)),
+        'days_back': int(os.environ.get('GMAIL_DAYS_BACK', 20)),
         'max_results': int(os.environ.get('GMAIL_MAX_RESULTS', 1000)),
         'gdrive_folder_id': os.environ.get('GDRIVE_FOLDER_ID', "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU")
     },
