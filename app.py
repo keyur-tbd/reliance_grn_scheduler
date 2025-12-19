@@ -56,7 +56,7 @@ CONFIG = {
         'gdrive_folder_id': os.environ.get('GDRIVE_FOLDER_ID', "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU")
     },
     'pdf': {
-        'drive_folder_id': os.environ.get('PDF_DRIVE_FOLDER_ID', "1CKPlXQcQsvGDWmpINVj8lpKI7G9VG1Yv"),
+        'drive_folder_id': os.environ.get('PDF_DRIVE_FOLDER_ID', "1BF7HA6JkAVVPjPhrR4yVq0zabqW6yZ6j"),
         'llama_agent': os.environ.get('LLAMA_AGENT', "Reliance Agent"),
         'spreadsheet_id': os.environ.get('SPREADSHEET_ID', "1zlJaRur0K50ZLFQhxxmvfFVA3l4Whpe9XWgi1E-HFhg"),
         'sheet_range': os.environ.get('SHEET_RANGE', "reliancegrn"),
