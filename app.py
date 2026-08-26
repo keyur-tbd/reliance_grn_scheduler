@@ -2,7 +2,7 @@
 """
 Standalone Script for Reliance Automation Workflows
 Runs Gmail attachment downloader and LlamaParse PDF processor with console logging
-Scheduled to run every 3 hours using GitHub Actions
+Scheduled to run every 3 hours using Python's schedule library
 """
 
 import os
@@ -11,12 +11,10 @@ import base64
 import tempfile
 import time
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any, Optional
 from io import BytesIO
-
-# Remove schedule import since GitHub Actions will handle scheduling
-# import schedule
+import schedule
 
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -26,10 +24,12 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
 
 # Add LlamaParse import
+# Add LlamaParse import
 try:
     from llama_cloud_services import LlamaExtract
     LLAMA_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, ValueError, RuntimeError) as e:
+    logging.getLogger(__name__).error(f"LlamaParse import failed: {e}")
     LLAMA_AVAILABLE = False
 
 # Define custom SUCCESS log level
@@ -46,25 +46,26 @@ logging.Logger.success = success
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 logger = logging.getLogger(__name__)
 
-# Configuration - now with environment variables
+# Hardcoded configuration
 CONFIG = {
     'gmail': {
-        'sender': os.environ.get('GMAIL_SENDER', "DONOTREPLY@ril.com"),
-        'search_term': os.environ.get('GMAIL_SEARCH_TERM', "grn"),
-        'days_back': int(os.environ.get('GMAIL_DAYS_BACK', 7)),
-        'max_results': int(os.environ.get('GMAIL_MAX_RESULTS', 1000)),
-        'gdrive_folder_id': os.environ.get('GDRIVE_FOLDER_ID', "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU")
+        'senders': ["prabhu@thebakersdozen.in", "DONOTREPLY@ril.com"],
+        'search_term': "grn",
+        'days_back': 7,
+        'max_results': 1000,
+        'gdrive_folder_id': "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU"
     },
     'pdf': {
-        'drive_folder_id': os.environ.get('PDF_DRIVE_FOLDER_ID', "1BF7HA6JkAVVPjPhrR4yVq0zabqW6yZ6j"),
-        'llama_agent': os.environ.get('LLAMA_AGENT', "Reliance Agent"),
-        'spreadsheet_id': os.environ.get('SPREADSHEET_ID', "1zlJaRur0K50ZLFQhxxmvfFVA3l4Whpe9XWgi1E-HFhg"),
-        'sheet_range': os.environ.get('SHEET_RANGE', "reliancegrn"),
-        'days_back': int(os.environ.get('PDF_DAYS_BACK', 7)),
-        'max_files': int(os.environ.get('PDF_MAX_FILES', 1000))
+        'drive_folder_id': "1CKPlXQcQsvGDWmpINVj8lpKI7G9VG1Yv",
+        'llama_api_key': "llx-bQgRsWBsettPvDJstOZQ7SeTLb20MnHxzPTYTbAWnEKF6pW3",
+        'llama_agent': "Reliance Agent",
+        'spreadsheet_id': "1zlJaRur0K50ZLFQhxxmvfFVA3l4Whpe9XWgi1E-HFhg",
+        'sheet_range': "reliancegrn",
+        'days_back': 7,
+        'max_files': 1000
     },
     'log': {
-        'sheet_range': os.environ.get('LOG_SHEET_RANGE', "workflow_logs")
+        'sheet_range': "workflow_logs"
     }
 }
 
@@ -111,7 +112,7 @@ class RelianceAutomation:
                     self.processed_emails = set(state.get('emails', []))
                     self.processed_pdfs = set(state.get('pdfs', []))
         except Exception as e:
-            logger.warning(f"Could not load processed state: {e}")
+            pass
     
     def _save_processed_state(self):
         """Save processed email and PDF IDs to file"""
@@ -123,7 +124,7 @@ class RelianceAutomation:
             with open(self.processed_state_file, 'w') as f:
                 json.dump(state, f)
         except Exception as e:
-            logger.error(f"Could not save processed state: {e}")
+            pass
     
     def log(self, message: str, level: str = "INFO"):
         """Add log entry with timestamp"""
@@ -169,28 +170,40 @@ class RelianceAutomation:
         return self.current_stats
     
     def authenticate(self):
-        """Authenticate using token file for GitHub Actions"""
+        """Authenticate using token file with InstalledAppFlow for local OAuth"""
         try:
             self.log("Starting authentication process...", "INFO")
             
             combined_scopes = list(set(self.gmail_scopes + self.drive_scopes + self.sheets_scopes))
             
-            # For GitHub Actions, we'll create token.json from secret
+            # Load credentials from token file if exists
             if os.path.exists(TOKEN_FILE):
                 creds = Credentials.from_authorized_user_file(TOKEN_FILE, combined_scopes)
                 if creds and creds.valid:
-                    self.log("Authentication successful using token.json!", "SUCCESS")
+                    self.log("Authentication successful using cached token!", "SUCCESS")
                 elif creds and creds.expired and creds.refresh_token:
                     creds.refresh(Request())
                     with open(TOKEN_FILE, 'w') as token:
                         token.write(creds.to_json())
                     self.log("Authentication successful after token refresh!", "SUCCESS")
                 else:
-                    self.log("Invalid token.json, authentication failed", "ERROR")
-                    return False
+                    creds = None
             else:
-                self.log(f"{TOKEN_FILE} not found", "ERROR")
-                return False
+                creds = None
+            
+            # If no valid creds, run OAuth flow
+            if not creds or not creds.valid:
+                if not os.path.exists('credentials.json'):
+                    self.log("credentials.json not found. Please provide Google OAuth credentials.", "ERROR")
+                    return False
+                
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    'credentials.json', combined_scopes
+                )
+                creds = flow.run_local_server(port=0)
+                with open(TOKEN_FILE, 'w') as token:
+                    token.write(creds.to_json())
+                self.log("OAuth authentication successful! Token saved.", "SUCCESS")
             
             # Build services
             self.gmail_service = build('gmail', 'v1', credentials=creds)
@@ -215,14 +228,18 @@ class RelianceAutomation:
                 else:
                     raise
     
-    def search_emails(self, sender: str = "", search_term: str = "",
+    def search_emails(self, senders: Optional[List[str]] = None, search_term: str = "",
                      days_back: int = 7, max_results: int = 50) -> List[Dict]:
         """Search for emails with attachments"""
         def _search():
             query_parts = ["has:attachment"]
             
-            if sender:
-                query_parts.append(f'from:"{sender}"')
+            if senders:
+                from_queries = [f'from:"{s}"' for s in senders if s.strip()]
+                if len(from_queries) == 1:
+                    query_parts.append(from_queries[0])
+                elif len(from_queries) > 1:
+                    query_parts.append(f"({' OR '.join(from_queries)})")
             
             if search_term:
                 if "," in search_term:
@@ -290,16 +307,21 @@ class RelianceAutomation:
             if status_callback:
                 status_callback("Starting Gmail workflow...")
             self.log("Starting Gmail workflow", "INFO")
+            if progress_callback:
+                progress_callback(10)
             
             # Search for emails
             emails = self.search_emails(
-                sender=config['sender'],
+                senders=config['senders'],
                 search_term=config['search_term'],
                 days_back=config['days_back'],
                 max_results=config['max_results']
             )
             
             self.current_stats['gmail']['processed_emails'] = len(emails)
+            
+            if progress_callback:
+                progress_callback(25)
             
             if not emails:
                 self.log("No emails found matching criteria", "WARNING")
@@ -316,6 +338,9 @@ class RelianceAutomation:
             if not base_folder_id:
                 self.log("Failed to create base folder in Google Drive", "ERROR")
                 return {'success': False, 'processed': 0}
+            
+            if progress_callback:
+                progress_callback(50)
             
             processed_count = 0
             total_attachments = 0
@@ -362,10 +387,16 @@ class RelianceAutomation:
                     else:
                         self.log(f"No matching attachments in: {subject}", "INFO")
                     
+                    if progress_callback:
+                        progress = 50 + (i + 1) / len(emails) * 45
+                        progress_callback(int(progress))
+                    
                 except Exception as e:
                     self.log(f"Failed to process email {email.get('id', 'unknown')}: {str(e)}", "ERROR")
                     self.current_stats['gmail']['failed_uploads'] += 1
             
+            if progress_callback:
+                progress_callback(100)
             if status_callback:
                 status_callback(f"Gmail workflow completed! Processed {total_attachments} attachments from {processed_count} emails")
             self.log(f"Gmail workflow completed! Processed {total_attachments} attachments from {processed_count} emails", "SUCCESS")
@@ -547,24 +578,23 @@ class RelianceAutomation:
                 self.log("LlamaParse not available. Install with: pip install llama-cloud-services", "ERROR")
                 return {'success': False, 'processed': 0}
             
-            # Set Llama API key from environment variable
-            llama_api_key = os.environ.get('LLAMA_CLOUD_API_KEY')
-            if not llama_api_key:
-                self.log("LLAMA_CLOUD_API_KEY environment variable not set", "ERROR")
-                return {'success': False, 'processed': 0}
-            
             if status_callback:
                 status_callback("Starting PDF processing workflow...")
             self.log("Starting PDF processing workflow...", "INFO")
+            if progress_callback:
+                progress_callback(20)
             
             # Setup LlamaParse
-            os.environ["LLAMA_CLOUD_API_KEY"] = llama_api_key
+            os.environ["LLAMA_CLOUD_API_KEY"] = config['llama_api_key']
             extractor = LlamaExtract()
             agent = extractor.get_agent(name=config['llama_agent'])
             
             if agent is None:
                 self.log(f"Could not find agent '{config['llama_agent']}'. Check LlamaParse dashboard.", "ERROR")
                 return {'success': False, 'processed': 0}
+            
+            if progress_callback:
+                progress_callback(40)
             
             # Get existing IDs if skipping
             existing_ids = set()
@@ -636,10 +666,16 @@ class RelianceAutomation:
                         self.processed_pdfs.add(file['id'])
                         self._save_processed_state()
                     
+                    if progress_callback:
+                        progress = 40 + (i + 1) / len(pdf_files) * 55
+                        progress_callback(int(progress))
+                    
                 except Exception as e:
                     self.log(f"Failed to process PDF {file['name']}: {str(e)}", "ERROR")
                     self.current_stats['pdf']['failed_pdfs'] += 1
             
+            if progress_callback:
+                progress_callback(100)
             if status_callback:
                 status_callback(f"PDF workflow completed! Processed {processed_count} PDFs")
             self.log(f"PDF workflow completed! Processed {processed_count} PDFs", "SUCCESS")
@@ -998,16 +1034,28 @@ def run_combined_workflow(automation):
     }
 
 def main():
-    """Main function to run the automation - single run for GitHub Actions"""
+    """Main function to run the automation"""
     automation = RelianceAutomation()
     
     if not automation.authenticate():
         logger.error("Authentication failed. Exiting.")
         return
     
-    # Run once (GitHub Actions handles scheduling)
+    # Run once immediately
     result = run_combined_workflow(automation)
     logger.info(f"Workflow result: {result}")
+    
+    # Schedule to run every 3 hours
+    schedule.every(3).hours.do(run_combined_workflow, automation)
+    
+    logger.info("Scheduler started. Running workflow every 3 hours. Press Ctrl+C to stop.")
+    
+    try:
+        while True:
+            schedule.run_pending()
+            time.sleep(60)  # Check every minute
+    except KeyboardInterrupt:
+        logger.info("Scheduler stopped by user.")
 
 if __name__ == "__main__":
     main()
