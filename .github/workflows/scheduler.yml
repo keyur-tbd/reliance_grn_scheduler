@@ -11,6 +11,10 @@ on:
 jobs:
   run-scheduler:
     runs-on: ubuntu-latest
+    # Backstop only. The job's own --budget-minutes stops it first;
+    # GitHub's default is 360 minutes, which let a stuck run keep
+    # writing for 3h16m on 2026-08-31.
+    timeout-minutes: 60
 
     steps:
       # 1. Checkout code
@@ -69,7 +73,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-        run: python -u supabase_sink.py --run --source reliance
+        run: python -u supabase_sink.py --run --source reliance --budget-minutes 45
 
       # 7. Cleanup
       - name: Cleanup credentials
