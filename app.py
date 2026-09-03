@@ -22,6 +22,7 @@ from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaIoBaseUpload
+from etl_alerts import guard
 
 # Add LlamaParse import
 # Add LlamaParse import
@@ -1035,6 +1036,9 @@ def run_combined_workflow(automation):
 
 def main():
     """Main function to run the automation"""
+    # Shared disk guard: refuse to write if this pipeline is over its budget
+    # or the volume is full. Emails on warn/stop. Fails open. See etl_alerts.py.
+    guard("grn")
     automation = RelianceAutomation()
     
     if not automation.authenticate():
