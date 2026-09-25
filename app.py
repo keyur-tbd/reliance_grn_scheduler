@@ -253,6 +253,8 @@ class RelianceAutomation:
             
             # Add date filter
             start_date = datetime.now() - timedelta(days=days_back)
+            # Reliance's return challans ("RETURN DELIVERY NOTE No.: ...") share sender and keyword; not wanted
+            query_parts.append('-subject:"RETURN DELIVERY NOTE"')
             query_parts.append(f"after:{start_date.strftime('%Y/%m/%d')}")
             
             query = " ".join(query_parts)
