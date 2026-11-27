@@ -55,7 +55,11 @@ CONFIG = {
         # GMAIL_DAYS_BACK overrides for a backfill (workflow_dispatch input days_back)
         'days_back': int(os.getenv('GMAIL_DAYS_BACK') or 21),
         'max_results': 1000,
-        'gdrive_folder_id': "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU"
+        'gdrive_folder_id': "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU",
+        # PDFs go straight into the folder the extract step and supabase_sink read (pdf.drive_folder_id).
+        # Built by name, they landed in Reliance GRN/Gmail_Attachments/grn/PDFs, a second tree that nothing
+        # reads (two Gmail_Attachments folders exist); the reader's folder is .../GRN/PDFs.
+        'pdf_upload_folder_id': "1CKPlXQcQsvGDWmpINVj8lpKI7G9VG1Yv"
     },
     'pdf': {
         'drive_folder_id': "1CKPlXQcQsvGDWmpINVj8lpKI7G9VG1Yv",
@@ -515,11 +519,14 @@ class RelianceAutomation:
                 search_folder_name = search_term if search_term else "all-attachments"
                 file_type_folder = self._classify_extension(filename)
                 
-                # Create search term folder
-                search_folder_id = self._create_drive_folder(search_folder_name, base_folder_id)
-                
-                # Create file type folder within search folder
-                type_folder_id = self._create_drive_folder(file_type_folder, search_folder_id)
+                if file_type_folder == "PDFs" and config.get('pdf_upload_folder_id'):
+                    type_folder_id = config['pdf_upload_folder_id']
+                else:
+                    # Create search term folder
+                    search_folder_id = self._create_drive_folder(search_folder_name, base_folder_id)
+
+                    # Create file type folder within search folder
+                    type_folder_id = self._create_drive_folder(file_type_folder, search_folder_id)
                 
                 # Clean filename but do not add prefix
                 clean_filename = self._sanitize_filename(filename)
