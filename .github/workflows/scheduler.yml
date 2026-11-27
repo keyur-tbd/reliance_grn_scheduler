@@ -7,6 +7,11 @@ on:
 
   # Allow manual triggering from GitHub UI
   workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Gmail lookback in days (backfill); blank = 21'
+        required: false
+        default: ''
 
 jobs:
   run-scheduler:
@@ -54,7 +59,11 @@ jobs:
       # 6. Run the workflow (single execution, not the continuous scheduler in
       #    app.py's __main__ block)
       - name: Run workflow
+        env:
+          GMAIL_DAYS_BACK: ${{ github.event.inputs.days_back }}
         run: |
+          # without pipefail, tee hid every Gmail sign-in failure from Sep 2026 behind a green run
+          set -o pipefail
           echo "🚀 Starting Reliance GRN workflow..."
           python -u -c "
           from app import RelianceAutomation, run_combined_workflow
@@ -70,6 +79,8 @@ jobs:
       # explicit because .env is gitignored and the sink would otherwise
       # default to instamart.
       - name: Drive -> Supabase
+        # still load whatever is already in Drive when the mail step failed; the job stays red
+        if: ${{ !cancelled() }}
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

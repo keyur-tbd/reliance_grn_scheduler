@@ -52,7 +52,8 @@ CONFIG = {
     'gmail': {
         'senders': ["prabhu@thebakersdozen.in", "DONOTREPLY@ril.com"],
         'search_term': "grn",
-        'days_back': 21,
+        # GMAIL_DAYS_BACK overrides for a backfill (workflow_dispatch input days_back)
+        'days_back': int(os.getenv('GMAIL_DAYS_BACK') or 21),
         'max_results': 1000,
         'gdrive_folder_id': "1YH8bT01X0C03SbgFF8qWO49Tv85Xd5UU"
     },
@@ -179,7 +180,22 @@ class RelianceAutomation:
             
             # Load credentials from token file if exists
             if os.path.exists(TOKEN_FILE):
-                creds = Credentials.from_authorized_user_file(TOKEN_FILE, combined_scopes)
+                # Refresh with the scopes the token was actually granted. Asking for others (this class asks for
+                # drive.file; the token holds full drive) makes Google answer invalid_scope on every refresh, which
+                # stopped every mailed GRN from reaching Drive from Sep 2026 on.
+                with open(TOKEN_FILE, encoding='utf-8') as fh:
+                    raw = json.load(fh)
+                granted = raw.get('scopes') or combined_scopes
+                if isinstance(granted, str):
+                    granted = granted.split()
+                short = {g.rsplit('/', 1)[-1] for g in granted}
+                missing = [n for n, ok in (('gmail', any(g.startswith('gmail') for g in short)),
+                                           ('drive', any(g.startswith('drive') for g in short)),
+                                           ('spreadsheets', 'spreadsheets' in short)) if not ok]
+                if missing:
+                    self.log(f"Token lacks scopes for: {', '.join(missing)}", "ERROR")
+                    return False
+                creds = Credentials.from_authorized_user_info(raw, granted)
                 if creds and creds.valid:
                     self.log("Authentication successful using cached token!", "SUCCESS")
                 elif creds and creds.expired and creds.refresh_token:
